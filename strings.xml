@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">HawkAI Air Gestures</string>
+    <string name="accessibility_description">Lets HawkAI perform screenshots, swipes, back, home and other actions when it sees your hand gestures. No screen content is read or stored.</string>
+</resources>
