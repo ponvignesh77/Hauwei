@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HarmonyOS Air Gestures</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    -webkit-tap-highlight-color:transparent; }
+body { background:linear-gradient(135deg,#1e3c72 0%,#2a5298 100%); height:100vh; display:flex;
+    flex-direction:column; justify-content:space-between; color:#fff; overflow:hidden; padding:20px; }
+.status-bar { display:flex; justify-content:space-between; align-items:center; font-size:14px; padding:0 10px; opacity:.95; }
+#airBtn { background:rgba(255,255,255,.18); color:#fff; border:1px solid rgba(255,255,255,.3);
+    border-radius:16px; padding:5px 12px; font-size:13px; }
+#airBtn.on { background:#34C759; border-color:#34C759; }
+.desktop { display:flex; flex-direction:column; gap:14px; max-width:400px; margin:0 auto; width:100%; }
+.widget-card { background:rgba(255,255,255,.15); backdrop-filter:blur(20px); border-radius:24px; padding:24px;
+    border:1px solid rgba(255,255,255,.2); box-shadow:0 8px 32px rgba(0,0,0,.3); display:flex; flex-direction:column; gap:10px; }
+.clock { font-size:48px; font-weight:300; letter-spacing:-1px; }
+.date { font-size:16px; opacity:.8; }
+.weather-info { display:flex; justify-content:space-between; font-size:14px; margin-top:10px;
+    border-top:1px solid rgba(255,255,255,.1); padding-top:10px; }
+.pages { overflow:hidden; width:100%; touch-action:pan-y; }
+.pager { display:flex; transition:transform .35s ease; }
+.app-grid { min-width:100%; display:grid; grid-template-columns:repeat(4,1fr); gap:20px; padding:10px; align-content:start; }
+.app-icon { display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer; transition:transform .15s; }
+.app-icon:active { transform:scale(.92); }
+.icon-box { width:60px; height:60px; border-radius:16px; display:flex; align-items:center; justify-content:center;
+    font-size:24px; box-shadow:0 4px 12px rgba(0,0,0,.2); transition:all .15s; }
+.app-icon.hover .icon-box { outline:3px solid #fff; transform:scale(1.14); box-shadow:0 0 22px rgba(255,255,255,.7); }
+.app-name { font-size:12px; text-shadow:0 1px 2px rgba(0,0,0,.5); }
+.dots { display:flex; justify-content:center; gap:8px; }
+.dots span { width:8px; height:8px; border-radius:50%; background:rgba(255,255,255,.35); transition:all .2s; }
+.dots span.active { background:#fff; width:20px; border-radius:6px; }
+.dock { background:rgba(255,255,255,.1); backdrop-filter:blur(25px); border-radius:30px; padding:12px 20px;
+    display:flex; justify-content:space-around; align-items:center; max-width:400px; margin:0 auto; width:100%;
+    border:1px solid rgba(255,255,255,.15); }
+.dock .icon-box { width:50px; height:50px; border-radius:14px; }
+
+/* Air gesture UI */
+#cursor { position:fixed; left:0; top:0; width:30px; height:30px; margin:-15px 0 0 -15px; border-radius:50%;
+    border:3px solid #fff; background:rgba(79,195,247,.55); box-shadow:0 0 14px rgba(79,195,247,.9);
+    pointer-events:none; z-index:999; display:none; transition:transform .1s, background .1s; }
+#cursor.pinch { transform:scale(.55); background:rgba(102,187,106,.9); }
+#airbox { position:fixed; right:12px; bottom:96px; width:110px; border-radius:14px; overflow:hidden;
+    border:2px solid rgba(255,255,255,.5); background:#000; display:none; z-index:900; }
+#airbox video, #airbox canvas { position:absolute; inset:0; width:100%; height:100%; transform:scaleX(-1); }
+#airbox .ph { position:relative; width:110px; height:82px; }
+#airlabel { position:absolute; left:0; right:0; bottom:0; background:rgba(0,0,0,.65); font-size:11px;
+    text-align:center; padding:2px 0; z-index:2; }
+#toast { position:fixed; left:50%; bottom:110px; transform:translateX(-50%) translateY(20px); background:rgba(0,0,0,.75);
+    padding:10px 18px; border-radius:20px; font-size:14px; opacity:0; transition:all .25s; pointer-events:none; z-index:1000; max-width:90%; text-align:center; }
+#toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+#confirm { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); background:#fff; color:#111; border:none;
+    border-radius:26px; padding:16px 28px; font-size:18px; font-weight:600; box-shadow:0 10px 40px rgba(0,0,0,.5);
+    display:none; z-index:1001; }
+
+.app-name { max-width:76px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center; }
+.app-grid { gap:14px 8px; padding:6px; }
+.app-grid .icon-box { width:54px; height:54px; font-size:23px; }
+.widget-card { padding:16px 20px; gap:6px; }
+.clock { font-size:40px; }
+.weather-info { margin-top:4px; padding-top:8px; }
+.desktop { gap:10px; }
+</style>
+</head>
+<body>
+
+<div class="status-bar">
+    <span id="time-small">09:00</span>
+    <button id="airBtn">🖐 Air gestures: Off</button>
+    <span>5G 📶 🔋 100%</span>
+</div>
+
+<div class="desktop">
+    <div class="widget-card">
+        <div class="clock" id="clock">09:00</div>
+        <div class="date" id="date">Monday, Oct 12</div>
+        <div class="weather-info"><span>📍 New Delhi</span><span>☀️ 28°C Clear</span></div>
+    </div>
+
+    <div class="pages" id="pages">
+        <div class="pager" id="pager"></div>
+    </div>
+    <div class="dots" id="dots"></div>
+</div>
+
+<div class="dock">
+    <div class="app-icon" data-app="phone"><div class="icon-box" style="background:#007DFF">📞</div></div>
+    <div class="app-icon" data-app="messages"><div class="icon-box" style="background:#34C759">💬</div></div>
+    <div class="app-icon" data-app="browser"><div class="icon-box" style="background:#FF3B30">🌐</div></div>
+    <div class="app-icon" data-app="settings"><div class="icon-box" style="background:#AF52DE">⚙️</div></div>
+</div>
+
+<div id="cursor"></div>
+<div id="airbox"><div class="ph" id="ph"><video id="video" autoplay playsinline muted></video><canvas id="overlay"></canvas></div><div id="airlabel">…</div></div>
+<div id="toast"></div>
+<button id="confirm"></button>
+
+<script>
+/* ================= Launching real apps ================= */
+const enc = encodeURIComponent;
+const launch = (pkg, fb) => `intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=${pkg};S.browser_fallback_url=${enc(fb)};end`;
+const category = (cat, fb) => `intent:#Intent;action=android.intent.action.MAIN;category=${cat};S.browser_fallback_url=${enc(fb)};end`;
+const APPS = {
+    phone:{label:'Phone',url:'intent:#Intent;action=android.intent.action.DIAL;end'},
+    messages:{label:'Messages',url:'sms:'},
+    camera:{label:'Camera',url:'intent:#Intent;action=android.media.action.STILL_IMAGE_CAMERA;end'},
+    settings:{label:'Settings',url:'intent:#Intent;action=android.settings.SETTINGS;end'},
+    music:{label:'Music',url:category('android.intent.category.APP_MUSIC','https://music.youtube.com')},
+    maps:{label:'Maps',url:'geo:0,0'},
+    files:{label:'Files',url:launch('com.sec.android.app.myfiles','https://play.google.com/store/apps/details?id=com.google.android.apps.nbu.files')},
+    weather:{label:'Weather',url:launch('com.sec.android.daemonapp','https://www.google.com/search?q=weather')},
+    browser:{label:'Browser',url:category('android.intent.category.APP_BROWSER','https://www.google.com')},
+    gallery:{label:'Gallery',url:category('android.intent.category.APP_GALLERY','https://photos.google.com')},
+    calculator:{label:'Calculator',url:category('android.intent.category.APP_CALCULATOR','https://www.google.com/search?q=calculator')},
+    contacts:{label:'Contacts',url:category('android.intent.category.APP_CONTACTS','https://contacts.google.com')},
+    calendar:{label:'Calendar',url:category('android.intent.category.APP_CALENDAR','https://calendar.google.com')}
+};
+
+const $ = id => document.getElementById(id);
+const toast = $('toast'); let toastTimer;
+function showToast(msg, ms=1600){ toast.textContent = msg; toast.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(()=>toast.classList.remove('show'), ms); }
+
+function openApp(name){
+    const app = APPS[name]; if(!app) return;
+    showToast('Opening ' + app.label + '…');
+    window.location.href = app.url;
+}
+document.addEventListener('click', e => { const el = e.target.closest && e.target.closest('[data-app]'); if(el) openApp(el.dataset.app); });
+
+/* A gesture is not a "tap", so Chrome may refuse to launch another app from it.
+   If so, ask for one real tap to confirm. */
+const confirmBtn = $('confirm'); let confirmTimer;
+function gestureOpen(name){
+    if(navigator.userActivation && !navigator.userActivation.isActive){
+        confirmBtn.textContent = 'Tap to open ' + APPS[name].label;
+        confirmBtn.onclick = () => { confirmBtn.style.display='none'; openApp(name); };
+        confirmBtn.style.display = 'block';
+        clearTimeout(confirmTimer); confirmTimer = setTimeout(()=>confirmBtn.style.display='none', 5000);
+    } else openApp(name);
+}
+
+/* ================= Pages ================= */
+let page = 0; let PAGES = 1;
+function goPage(n){
+    n = Math.max(0, Math.min(PAGES-1, n)); if(n === page) return;
+    page = n;
+    $('pager').style.transform = `translateX(${-100*page}%)`;
+    [...$('dots').children].forEach((d,i)=>d.classList.toggle('active', i===page));
+}
+let tx0 = null;
+$('pages').addEventListener('touchstart', e => tx0 = e.touches[0].clientX, {passive:true});
+$('pages').addEventListener('touchend', e => {
+    if(tx0 === null) return; const dx = e.changedTouches[0].clientX - tx0; tx0 = null;
+    if(Math.abs(dx) > 50) goPage(page + (dx < 0 ? 1 : -1));
+});
+
+
+/* ================= Your phone's apps ================= */
+const playUrl = pkg => 'https://play.google.com/store/apps/details?id=' + pkg;
+const META = {   // [emoji, colour] for the built-in apps defined above
+    phone:['📞','#007DFF'], messages:['💬','#34C759'], camera:['📷','#FF9500'], settings:['⚙️','#AF52DE'],
+    music:['🎵','#FF3B30'], maps:['🗺️','#5856D6'], files:['📁','#FFCC00'], weather:['☁️','#5AC8FA'],
+    gallery:['🖼️','#FF2D55'], calculator:['🧮','#636366'], contacts:['👤','#30B0C7'], calendar:['📅','#FF6B35']
+};
+APPS.clock = { label:'Clock', url:'intent:#Intent;action=android.intent.action.SHOW_ALARMS;end' };
+META.clock = ['⏰','#E53935'];
+
+// key, label, emoji, colour, Android package
+const MY_APPS = [
+ ['clock'],
+ ['gemini','Gemini','✨','#4285F4','com.google.android.apps.bard'],
+ ['chatgpt','ChatGPT','🤖','#10A37F','com.openai.chatgpt'],
+ ['claude','Claude','✳️','#D97757','com.anthropic.claude'],
+ ['whatsapp','WhatsApp','💬','#25D366','com.whatsapp'],
+ ['instagram','Instagram','📸','#C13584','com.instagram.android'],
+ ['facebook','Facebook','📘','#1877F2','com.facebook.katana'],
+ ['telegram','Telegram','✈️','#29A9EB','org.telegram.messenger'],
+ ['pinterest','Pinterest','📌','#E60023','com.pinterest'],
+ ['spotify','Spotify','🎧','#1DB954','com.spotify.music'],
+ ['photos','Photos','🌸','#FBBC05','com.google.android.apps.photos'],
+ ['drive','Drive','🔺','#F4B400','com.google.android.apps.docs'],
+ ['onedrive','OneDrive','☁️','#0078D4','com.microsoft.skydrive'],
+ ['playstore','Play Store','▶️','#00C853','com.android.vending'],
+ ['store','Galaxy Store','🛍️','#E91E63','com.sec.android.app.samsungapps'],
+ ['chromebeta','Chrome Beta','🌐','#4285F4','com.chrome.beta'],
+ ['github','GitHub','🐙','#24292E','com.github.android'],
+ ['truecaller','Truecaller','☎️','#0A84FF','com.truecaller'],
+ ['paytm','Paytm','💳','#00BAF2','net.one97.paytm'],
+ ['gpay','GPay','💰','#4285F4','com.google.android.apps.nbu.paisa.user'],
+ ['pass','Pass','🔐','#1428A0','com.samsung.android.samsungpass'],
+ ['securefolder','Secure Folder','🔒','#1A237E','com.samsung.knox.securefolder'],
+ ['routines','Routines','✅','#5C6BC0','com.samsung.android.app.routines'],
+ ['zarchiver','ZArchiver','🗜️','#2E7D32','ru.zdevs.zarchiver'],
+ ['vidmate','VidMate','⬇️','#FF3B30','com.nemo.vidmate'],
+ ['xrecorder','XRecorder','🎥','#FF7A00','videoeditor.videorecorder.screenrecorder'],
+ ['capcut','CapCut','✂️','#212121','com.lemon.lvoverseas'],
+ ['picsart','Picsart','🎨','#8E24AA','com.picsart.studio'],
+ ['ytstudio','Studio','🎬','#D81B60','com.google.android.apps.youtube.creator'],
+ ['ghome','Home','🏠','#34A853','com.google.android.apps.chromecast.app'],
+ ['classroom','Classroom','🏫','#0F9D58','com.google.android.apps.classroom'],
+ ['gaminghub','Gaming Hub','🎮','#5E35B1','com.samsung.android.game.gamehome'],
+ ['freefire','Free Fire MAX','🔥','#FF6F00','com.dts.freefiremax'],
+ ['roblox','Roblox','🧱','#2962FF','com.roblox.client'],
+ ['clashroyale','Clash Royale','👑','#1565C0','com.supercell.clashroyale'],
+ ['coc','Clash of Clans','⚔️','#F9A825','com.supercell.clashofclans']
+];
+MY_APPS.forEach(a => {
+    if(a.length > 1){ APPS[a[0]] = { label:a[1], url:launch(a[4], playUrl(a[4])) }; META[a[0]] = [a[2], a[3]]; }
+});
+
+const CORE = ['phone','messages','camera','settings','music','maps','files','weather','gallery','calculator','contacts','calendar'];
+const ALL  = CORE.concat(MY_APPS.map(a => a[0]));
+const PER_PAGE = 12;
+
+function buildPages(){
+    const pager = $('pager'), dots = $('dots');
+    PAGES = Math.ceil(ALL.length / PER_PAGE);
+    pager.innerHTML = ''; dots.innerHTML = '';
+    for(let p = 0; p < PAGES; p++){
+        const grid = document.createElement('div'); grid.className = 'app-grid';
+        ALL.slice(p*PER_PAGE, (p+1)*PER_PAGE).forEach(k => {
+            const [emoji, color] = META[k];
+            const d = document.createElement('div'); d.className = 'app-icon'; d.dataset.app = k;
+            d.innerHTML = `<div class="icon-box" style="background:${color}">${emoji}</div><span class="app-name">${APPS[k].label}</span>`;
+            grid.appendChild(d);
+        });
+        pager.appendChild(grid);
+        const dot = document.createElement('span'); if(p === 0) dot.className = 'active'; dots.appendChild(dot);
+    }
+}
+buildPages();
+
+/* ================= Air gestures ================= */
+const LIB  = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+const MODEL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
+const video = $('video'), overlay = $('overlay'), octx = overlay.getContext('2d');
+const cursor = $('cursor'), airbox = $('airbox'), airlabel = $('airlabel'), airBtn = $('airBtn');
+let landmarker = null, stream = null, running = false, lastVT = -1;
+
+const dist = (a,b) => Math.hypot(a.x-b.x, a.y-b.y);
+let cx = innerWidth/2, cy = innerHeight/2;
+let buf = [];                       // recent cursor positions (for pinch click)
+let pinching = false, hoverEl = null;
+let palmHist = [], lastSwipe = 0;
+let fistSince = 0, fistLatched = false;
+
+function setLabel(t){ airlabel.textContent = t; }
+
+async function startAir(){
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+        showToast('Camera not available here. Open this page in Chrome over https or as a file.', 4000); return; }
+    airBtn.textContent = '⏳ Loading…';
+    try{
+        if(!landmarker){
+            const vision = await import(LIB + '/vision_bundle.mjs');
+            const fileset = await vision.FilesetResolver.forVisionTasks(LIB + '/wasm');
+            const make = delegate => vision.HandLandmarker.createFromOptions(fileset, {
+                baseOptions:{ modelAssetPath: MODEL, delegate }, runningMode:'VIDEO', numHands:1,
+                minHandDetectionConfidence:.6, minTrackingConfidence:.5 });
+            try { landmarker = await make('GPU'); } catch(e){ landmarker = await make('CPU'); }
+        }
+        stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'user', width:{ideal:640}, height:{ideal:480} }, audio:false });
+        video.srcObject = stream; await video.play();
+        const ph = $('ph');
+        const fit = () => { if(video.videoWidth){ ph.style.height = (110*video.videoHeight/video.videoWidth)+'px';
+            overlay.width = video.videoWidth; overlay.height = video.videoHeight; } };
+        fit(); video.onloadedmetadata = fit;
+        airbox.style.display = 'block'; running = true; lastVT = -1;
+        airBtn.textContent = '🖐 Air gestures: On'; airBtn.classList.add('on');
+        showToast('Point = move · Pinch = open · Swipe = pages · Fist = page 1', 3500);
+        loop();
+    }catch(err){
+        console.error(err); stopAir();
+        showToast('Could not start: ' + (err.message || err), 4000);
+    }
+}
+function stopAir(){
+    running = false;
+    if(stream){ stream.getTracks().forEach(t=>t.stop()); stream = null; }
+    airbox.style.display = 'none'; cursor.style.display = 'none';
+    if(hoverEl){ hoverEl.classList.remove('hover'); hoverEl = null; }
+    airBtn.textContent = '🖐 Air gestures: Off'; airBtn.classList.remove('on');
+}
+airBtn.addEventListener('click', () => running ? stopAir() : startAir());
+
+function loop(){
+    if(!running) return;
+    if(video.readyState >= 2 && video.currentTime !== lastVT){
+        lastVT = video.currentTime;
+        const res = landmarker.detectForVideo(video, performance.now());
+        handle(res.landmarks && res.landmarks[0]);
+    }
+    requestAnimationFrame(loop);
+}
+
+function drawHand(lm){
+    octx.clearRect(0,0,overlay.width,overlay.height);
+    if(!lm) return;
+    const w = overlay.width, h = overlay.height;
+    octx.fillStyle = '#4FC3F7';
+    lm.forEach(p => { octx.beginPath(); octx.arc(p.x*w, p.y*h, 4, 0, 7); octx.fill(); });
+}
+
+function handle(lm){
+    drawHand(lm);
+    const now = performance.now();
+    if(!lm){
+        cursor.style.display = 'none'; setLabel('Show your hand');
+        palmHist = []; fistSince = 0; fistLatched = false; pinching = false; setHover(null); return;
+    }
+    const size = Math.max(dist(lm[0], lm[9]), 0.01);
+    const ext = (tip,pip) => dist(lm[tip], lm[0]) > dist(lm[pip], lm[0]) * 1.1;
+    const idx = ext(8,6), mid = ext(12,10), ring = ext(16,14), pink = ext(20,18);
+    const thumb = dist(lm[4], lm[17]) > dist(lm[3], lm[17]) * 1.05;
+    const pinchD = dist(lm[4], lm[8]) / size;
+
+    // ---- cursor (mirrored, with a little reach amplification) ----
+    const mx = 1 - lm[8].x, my = lm[8].y;
+    const tx = Math.min(1, Math.max(0, (mx - 0.15) / 0.7)) * innerWidth;
+    const ty = Math.min(1, Math.max(0, (my - 0.10) / 0.7)) * innerHeight;
+    if(!pinching){
+        cx += (tx - cx) * 0.4; cy += (ty - cy) * 0.4;
+        buf.push({t:now, x:cx, y:cy}); while(buf.length && now - buf[0].t > 500) buf.shift();
+    }
+    cursor.style.display = 'block'; cursor.style.left = cx+'px'; cursor.style.top = cy+'px';
+    if(!pinching) setHover(appAt(cx, cy));
+
+    // ---- pinch = tap what the cursor was on just before pinching ----
+    if(!pinching && pinchD < 0.28){
+        pinching = true; cursor.classList.add('pinch');
+        let p = {x:cx, y:cy};
+        for(let i = buf.length-1; i >= 0; i--){ if(now - buf[i].t >= 150){ p = buf[i]; break; } }
+        const el = appAt(p.x, p.y);
+        if(el){ setLabel('🤏 Pinch: ' + APPS[el.dataset.app].label); gestureOpen(el.dataset.app); }
+        else setLabel('🤏 Pinch');
+    } else if(pinching && pinchD > 0.45){
+        pinching = false; cursor.classList.remove('pinch');
+    }
+
+    // ---- swipe: open hand moving sideways ----
+    const open = idx && mid && ring && pink;
+    const px = 1 - (lm[0].x + lm[5].x + lm[9].x + lm[13].x + lm[17].x) / 5;
+    palmHist.push({t:now, x:px}); while(palmHist.length && now - palmHist[0].t > 350) palmHist.shift();
+    if(open && now - lastSwipe > 900 && palmHist.length > 3){
+        const dx = px - palmHist[0].x;
+        if(Math.abs(dx) > 0.22){
+            lastSwipe = now; palmHist = [];
+            if(dx < 0){ goPage(page + 1); setLabel('👈 Swipe left'); } else { goPage(page - 1); setLabel('👉 Swipe right'); }
+            return;
+        }
+    }
+
+    // ---- fist held = back to page 1 ----
+    const fist = !idx && !mid && !ring && !pink && !thumb;
+    if(fist){
+        if(!fistSince) fistSince = now;
+        if(!fistLatched && now - fistSince > 800){ fistLatched = true; goPage(0); setLabel('✊ Home page'); }
+    } else { fistSince = 0; fistLatched = false; }
+
+    if(!pinching && !fist && now - lastSwipe > 900) setLabel(open ? '🖐 Open hand' : idx ? '☝️ Pointing' : 'Hand');
+}
+
+function appAt(x, y){
+    const el = document.elementFromPoint(x, y);
+    return el && el.closest ? el.closest('[data-app]') : null;
+}
+function setHover(el){
+    if(el === hoverEl) return;
+    if(hoverEl) hoverEl.classList.remove('hover');
+    hoverEl = el; if(el) el.classList.add('hover');
+}
+
+/* ================= Clock ================= */
+function updateClock(){
+    const now = new Date(); let m = now.getMinutes(); m = m < 10 ? '0'+m : m;
+    $('clock').innerText = $('time-small').innerText = `${now.getHours()}:${m}`;
+    $('date').innerText = now.toLocaleDateString('en-US', {weekday:'long', month:'short', day:'numeric'});
+}
+setInterval(updateClock, 1000); updateClock();
+</script>
+</body>
+</html>
